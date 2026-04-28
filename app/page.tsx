@@ -1,17 +1,13 @@
 'use client'
 
-import earring2 from '../earing2.png'
-import ring1 from '../ring1.png'
+import necklacePng from '../Remove background project (2.1).png'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const necklaceImageRef = useRef<HTMLImageElement | null>(null) // Corrected: This was a duplicate, now it's the necklace ref
-  const earringImageRef = useRef<HTMLImageElement | null>(null)
   const faceDetectionRef = useRef<any>(null)
-  const handLandmarkerRef = useRef<any>(null)
-  const ringImageRef = useRef<HTMLImageElement | null>(null) // Add this line for the ring image
   const animationFrameId = useRef<number | null>(null)
   const [permissionState, setPermissionState] = useState<'pending' | 'granted' | 'denied'>('pending')
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([])
@@ -48,34 +44,50 @@ export default function Home() {
         })
       }
     } catch (error) {
-      console.error('Camera setup error:', error)
+      // console.error('Camera setup error:', error)
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         setPermissionState('denied')
       } else {
         setPermissionState('denied')
       }
-      throw error
     }
   }, [setPermissionState])
 
   useEffect(() => {
+    // Temporarily override console.log and console.info to hide specific informational messages
+    const originalLog = console.log
+    const originalInfo = console.info
+    const filterMessage = 'Created TensorFlow Lite XNNPACK delegate for CPU'
+
+    console.log = (...args) => {
+      if (typeof args[0] === 'string' && args[0].includes(filterMessage)) return
+      originalLog(...args)
+    }
+
+    console.info = (...args) => {
+      if (typeof args[0] === 'string' && args[0].includes(filterMessage)) return
+      originalInfo(...args)
+    }
+
     const initAR = async () => {
       try {
         // Check camera permissions first
         try {
-          const permission = await navigator.permissions.query({ name: 'camera' })
+          const permission = await navigator.permissions.query({
+            name: 'camera' as PermissionName,
+          })
           if (permission.state === 'denied') {
             setPermissionState('denied')
             return
           }
         } catch (err) {
           // Fallback if permissions API is not supported
-          console.log('[v0] Permissions API not available, proceeding with request')
+          // console.log('[v0] Permissions API not available, proceeding with request')
         }
 
         // Load MediaPipe FaceMesh
         const visionModule = await import('@mediapipe/tasks-vision')
-        const { FaceLandmarker, HandLandmarker, FilesetResolver } = visionModule
+        const { FaceLandmarker, FilesetResolver } = visionModule
 
         const vision = await FilesetResolver.forVisionTasks(
           'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm'
@@ -92,16 +104,6 @@ export default function Home() {
 
         faceDetectionRef.current = faceLandmarker
 
-        const handLandmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-          },
-          numHands: 2,
-          runningMode: 'VIDEO',
-        })
-        handLandmarkerRef.current = handLandmarker
-
         // Initialize video stream
         await setupCamera()
 
@@ -112,26 +114,13 @@ export default function Home() {
 
         // Load images
         const necklaceImg = new Image()
-        necklaceImg.crossOrigin = 'anonymous'
-        necklaceImg.src =
-          'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/necless-removebg-preview-eKz2jodGH8N7T3A6C0R7P8ArJP6J6b.png'
+        necklaceImg.src = necklacePng.src
         necklaceImageRef.current = necklaceImg
 
-        const earringImg = new Image()
-        // The earring image is now imported directly.
-        earringImg.src = earring2.src
-        earringImageRef.current = earringImg
-
-        const ringImg = new Image() // Add these lines for the ring image
-        ringImg.src = ring1.src      // Use the imported ring image
-        ringImageRef.current = ringImg // Store reference to the ring image
-
         // Wait for images to load
-        await Promise.all([ // Added opening square bracket
-          new Promise((resolve, reject) => { necklaceImg.onload = resolve; necklaceImg.onerror = () => reject(new Error(`Failed to load image: ${necklaceImg.src}`)); }),
-          new Promise((resolve, reject) => { earringImg.onload = resolve; earringImg.onerror = () => reject(new Error(`Failed to load image: ${earringImg.src}`)); }),
-          new Promise((resolve, reject) => { ringImg.onload = resolve; ringImg.onerror = () => reject(new Error(`Failed to load image: ${ringImg.src}`)); }), // Add ring image to loading promise
-        ]) // Added closing square bracket
+        await Promise.all([
+          new Promise((resolve, reject) => { necklaceImg.onload = resolve; necklaceImg.onerror = (e) => reject(new Error('Failed to load necklace image')); }),
+        ])
 
         // Start AR rendering
         // Start AR rendering
@@ -144,199 +133,111 @@ export default function Home() {
           canvas.height = window.innerHeight
 
           const animate = async () => {
-            const video = videoRef.current
-            if (!video || !canvas) {
-              // If refs are gone, component has likely unmounted. Stop the loop.
-              return;
-            }
-
-            if (video.videoWidth > 0 && video.videoHeight > 0) {
-              // Draw mirrored video, cropping to fit canvas aspect ratio ("cover")
-              ctx.save()
-              ctx.scale(-1, 1)
-
-              const videoWidth = video.videoWidth
-              const videoHeight = video.videoHeight
-              const canvasWidth = canvas.width
-              const canvasHeight = canvas.height
-
-              const canvasAspect = canvasWidth / canvasHeight
-              const videoAspect = videoWidth / videoHeight
-
-              let sx, sy, sWidth, sHeight
-
-              if (videoAspect > canvasAspect) {
-                // Video is wider than canvas, crop sides
-                sHeight = videoHeight
-                sWidth = videoHeight * canvasAspect
-                sx = (videoWidth - sWidth) / 2
-                sy = 0
-              } else {
-                // Video is taller than canvas, crop top/bottom
-                sWidth = videoWidth
-                sHeight = videoWidth / canvasAspect
-                sx = 0
-                sy = (videoHeight - sHeight) / 2
+            try {
+              const video = videoRef.current
+              if (!video || !canvas) {
+                // If refs are gone, component has likely unmounted. Stop the loop.
+                return
               }
 
-              ctx.drawImage(video, sx, sy, sWidth, sHeight, -canvas.width, 0, canvas.width, canvas.height)
-              ctx.restore()
+              if (video.videoWidth > 0 && video.videoHeight > 0) {
+                // Draw mirrored video, cropping to fit canvas aspect ratio ("cover")
+                ctx.save()
+                ctx.scale(-1, 1)
 
-              // Helper functions to convert normalized coordinates to canvas coordinates
-              const toCanvasX = (x: number) => (1 - ((x * videoWidth - sx) / sWidth)) * canvas.width;
-              const toCanvasY = (y: number) => ((y * videoHeight - sy) / sHeight) * canvas.height;
+                const videoWidth = video.videoWidth
+                const videoHeight = video.videoHeight
+                const canvasWidth = canvas.width
+                const canvasHeight = canvas.height
 
-              // Run detection
-              if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                const now = Date.now()
-                if (faceDetectionRef.current) {
-                  const detectionResult = faceDetectionRef.current.detectForVideo(video, now)
-                  if (detectionResult.faceLandmarks && detectionResult.faceLandmarks.length > 0) {
-                  const landmarks = detectionResult.faceLandmarks[0]
+                const canvasAspect = canvasWidth / canvasHeight
+                const videoAspect = videoWidth / videoHeight
 
-                  // Get key points (normalized to 0-1)
-                  // We still need the eyes to calculate the overall face width for scaling
-                  const leftEye = landmarks[226]
-                  const rightEye = landmarks[446]
-                  const leftEyeX = toCanvasX(leftEye.x);
-                  const rightEyeX = toCanvasX(rightEye.x);
+                let sx, sy, sWidth, sHeight
 
-                  // Get landmarks 11 and 12 for the chin
-                  const chinPointRight = landmarks[11] // User's right side of chin
-                  const chinPointLeft = landmarks[12] // User's left side of chin
-
-                  const chinRightX = toCanvasX(chinPointRight.x)
-                  const chinRightY = toCanvasY(chinPointRight.y)
-                  const chinLeftX = toCanvasX(chinPointLeft.x)
-                  const chinLeftY = toCanvasY(chinPointLeft.y)
-
-                  // Find the midpoint on the chin to anchor the necklace
-                  const chinMidX = (chinRightX + chinLeftX) / 2
-                  const chinMidY = (chinRightY + chinLeftY) / 2
-
-                  // Calculate necklace position and scale based on face width
-                  const faceWidth = (leftEyeX - rightEyeX) * 2.5
-
-                  if (necklaceImageRef.current) {
-                    const necklaceWidth = faceWidth * 0.9
-                    const necklaceHeight =
-                      (necklaceImageRef.current!.height / necklaceImageRef.current!.width) * necklaceWidth
-
-                    // Position necklace based on the chin midpoint
-                    const necklaceX = chinMidX - necklaceWidth / 2
-                    // Position below the chin. You can adjust the `* 0.2` multiplier
-                    // to move the necklace up or down to get the perfect fit.
-                    const necklaceY = chinMidY + necklaceHeight * 0.4
-
-                    // Draw necklace
-                    ctx.save()
-                    ctx.globalAlpha = 0.95
-                    ctx.drawImage(
-                      necklaceImageRef.current!,
-                      necklaceX,
-                      necklaceY,
-                      necklaceWidth,
-                      necklaceHeight
-                    )
-                    ctx.restore()
-                  }
-
-                  // Draw Earrings
-                  if (earringImageRef.current) {
-                    // Get key points for ears
-                    const personRightEarlobe = landmarks[361] // Person's right earlobe
-                    const personLeftEarlobe = landmarks[132]  // Person's left earlobe
-
-                    // Convert landmark coordinates
-                    const personRightEarlobeX = toCanvasX(personRightEarlobe.x)
-                    const personRightEarlobeY = toCanvasY(personRightEarlobe.y)
-                    const personLeftEarlobeX = toCanvasX(personLeftEarlobe.x)
-                    const personLeftEarlobeY = toCanvasY(personLeftEarlobe.y)
-
-                    // Calculate earring size
-                    const earringWidth = faceWidth * 0.05 //Adjusted size to be smaller
-                    const earringHeight =
-                      (earringImageRef.current!.height / earringImageRef.current!.width) * earringWidth
-                    const earringHorizontalOffset = faceWidth * -0.015
-
-                    // Determine ear visibility based on relative depth (z-coordinate)
-                    const eyeDistX = Math.abs(leftEye.x - rightEye.x);
-                    const zThreshold = eyeDistX * 0.5; // Heuristic: if z-diff is > 1.5x eye distance, one is hidden
-                    const rightEarVisible = personLeftEarlobe.z - personRightEarlobe.z > -zThreshold;
-                    const leftEarVisible = personRightEarlobe.z - personLeftEarlobe.z > -zThreshold;
-                    
-                    // Draw earring on person's right ear if landmark is visible
-                    if (personRightEarlobe && rightEarVisible) {
-                      ctx.save()
-                      ctx.globalAlpha = 0.95
-                      ctx.drawImage(
-                        earringImageRef.current!,
-                        personRightEarlobeX - earringWidth / 2 + earringHorizontalOffset,
-                        personRightEarlobeY,
-                        earringWidth,
-                        earringHeight,
-                      )
-                      ctx.restore()
-                    }
-
-                    // Draw earring on person's left ear if landmark is visible
-                    if (personLeftEarlobe && leftEarVisible) {
-                      ctx.save()
-                      ctx.globalAlpha = 0.95
-                      ctx.drawImage(
-                        earringImageRef.current!,
-                        personLeftEarlobeX - earringWidth / 2 - earringHorizontalOffset,
-                        personLeftEarlobeY,
-                        earringWidth,
-                        earringHeight,
-                      )
-                      ctx.restore()
-                    }
-                  }
-                }
+                if (videoAspect > canvasAspect) {
+                  // Video is wider than canvas, crop sides
+                  sHeight = videoHeight
+                  sWidth = videoHeight * canvasAspect
+                  sx = (videoWidth - sWidth) / 2
+                  sy = 0
+                } else {
+                  // Video is taller than canvas, crop top/bottom
+                  sWidth = videoWidth
+                  sHeight = videoWidth / canvasAspect
+                  sx = 0
+                  sy = (videoHeight - sHeight) / 2
                 }
 
-                // Detect and draw on hands for the ring
-                if (handLandmarkerRef.current && ringImageRef.current) {
-                  const handResult = handLandmarkerRef.current.detectForVideo(video, now);
-                  if (handResult && handResult.landmarks && handResult.landmarks.length > 0) {
-                    for (const handLandmarks of handResult.landmarks) {
-                      const ringFingerBase = handLandmarks[13] // Landmark for the base of the ring finger (MCP joint)
-                      const ringFingerPIP = handLandmarks[14] // Landmark for the middle of the ring finger (PIP joint)
-                      const wrist = handLandmarks[0]
-                      const middleFingerMCP = handLandmarks[9]
+                ctx.drawImage(video, sx, sy, sWidth, sHeight, -canvas.width, 0, canvas.width, canvas.height)
+                ctx.restore()
 
-                      // Get canvas coordinates for base and middle of the finger
-                      const ringBaseX = toCanvasX(ringFingerBase.x)
-                      const ringBaseY = toCanvasY(ringFingerBase.y)
-                      const ringPipX = toCanvasX(ringFingerPIP.x)
-                      const ringPipY = toCanvasY(ringFingerPIP.y)
+                // Helper functions to convert normalized coordinates to canvas coordinates
+                const toCanvasX = (x: number) => (1 - ((x * videoWidth - sx) / sWidth)) * canvas.width
+                const toCanvasY = (y: number) => ((y * videoHeight - sy) / sHeight) * canvas.height
 
-                      // Interpolate to position the ring slightly up from the base
-                      const interpolationFactor = 0.4 // 40% up from the base
-                      const ringX = ringBaseX + (ringPipX - ringBaseX) * interpolationFactor
-                      const ringY = ringBaseY + (ringPipY - ringBaseY) * interpolationFactor
+                // Run detection
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                  const now = Date.now()
+                  if (faceDetectionRef.current) {
+                    const detectionResult = faceDetectionRef.current.detectForVideo(video, now)
+                    if (detectionResult.faceLandmarks && detectionResult.faceLandmarks.length > 0) {
+                      const landmarks = detectionResult.faceLandmarks[0]
 
-                      // Calculate the angle of the finger to rotate the ring
-                      const angle = Math.atan2(
-                        ringPipY - ringBaseY,
-                        ringPipX - ringBaseX
-                      )
+                      // Get key points (normalized to 0-1)
+                      // We still need the eyes to calculate the overall face width for scaling
+                      const leftEye = landmarks[226]
+                      const rightEye = landmarks[446]
+                      const leftEyeX = toCanvasX(leftEye.x)
+                      const rightEyeX = toCanvasX(rightEye.x)
 
-                      // Calculate a reference size based on the hand landmarks for scaling the ring
-                      const handRefSize = Math.hypot(toCanvasX(wrist.x) - toCanvasX(middleFingerMCP.x), toCanvasY(wrist.y) - toCanvasY(middleFingerMCP.y));
-                      const ringWidth = handRefSize * 0.35; // Adjust this multiplier for a good fit
-                      const ringHeight = (ringImageRef.current.height / ringImageRef.current.width) * ringWidth
+                      // Get landmarks 11 and 12 for the chin
+                      const chinPointRight = landmarks[11] // User's right side of chin
+                      const chinPointLeft = landmarks[12] // User's left side of chin
 
-                      ctx.save()
-                      ctx.translate(ringX, ringY)
-                      ctx.rotate(angle + Math.PI / 2) // Rotate to align with the finger
-                      ctx.drawImage(ringImageRef.current, -ringWidth / 2, -ringHeight / 2, ringWidth, ringHeight)
-                      ctx.restore()
+                      const chinRightX = toCanvasX(chinPointRight.x)
+                      const chinRightY = toCanvasY(chinPointRight.y)
+                      const chinLeftX = toCanvasX(chinPointLeft.x)
+                      const chinLeftY = toCanvasY(chinPointLeft.y)
+
+                      // Find the midpoint on the chin to anchor the necklace
+                      const chinMidX = (chinRightX + chinLeftX) / 2
+                      const chinMidY = (chinRightY + chinLeftY) / 2
+
+                      // Calculate necklace position and scale based on face width
+                      const faceWidth = (leftEyeX - rightEyeX) * 2.5
+
+                      if (necklaceImageRef.current) {
+                        const necklaceWidth = faceWidth * 0.9
+                        const necklaceHeight =
+                          (necklaceImageRef.current!.height / necklaceImageRef.current!.width) * necklaceWidth
+
+                        // Position necklace based on the chin midpoint
+                        const necklaceX = chinMidX - necklaceWidth / 2
+                        // Position below the chin. You can adjust the multiplier
+                        // to move the necklace up or down to get the perfect fit.
+                        const necklaceY = chinMidY + necklaceHeight * 0.1
+
+                        // Draw necklace
+                        ctx.save()
+                        ctx.globalAlpha = 0.95
+                        ctx.drawImage(
+                          necklaceImageRef.current!,
+                          necklaceX,
+                          necklaceY,
+                          necklaceWidth,
+                          necklaceHeight
+                        )
+                        ctx.restore()
+                      }
                     }
                   }
                 }
               }
+            } catch (e) {
+              console.error('Error in animation loop:', e)
+              // Stop the loop if there's a persistent error to avoid flooding the console
+              if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current)
             }
 
             animationFrameId.current = requestAnimationFrame(animate)
@@ -344,14 +245,15 @@ export default function Home() {
 
           animate()
         }
-      } catch (error) {
-        console.error('AR initialization error:', error.name, error.message, error.stack, error)
+      } catch (error: any) {
+        // console.error('AR initialization error:', error)
         if (
           error instanceof DOMException &&
           error.name === 'NotAllowedError'
         ) {
           setPermissionState('denied')
         } else {
+          console.error("AR Initialization failed:", error.message);
           setPermissionState('denied')
         }
       }
@@ -366,6 +268,10 @@ export default function Home() {
         const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
         tracks.forEach((track) => track.stop())
       }
+
+      // Restore the original console functions when the component unmounts
+      console.log = originalLog
+      console.info = originalInfo
     }
   }, [setupCamera])
 
@@ -415,32 +321,6 @@ export default function Home() {
         ref={canvasRef}
         className="absolute inset-0 w-full h-full"
       />
-      
-      {permissionState === 'pending' && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/80">
-          <div className="text-center text-white">
-            <p className="text-lg font-medium mb-2">Requesting Camera Access</p>
-            <p className="text-sm text-gray-400">Please allow camera access in your browser</p>
-          </div>
-        </div>
-      )}
-      
-      {permissionState === 'denied' && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/80">
-          <div className="text-center text-white max-w-sm">
-            <p className="text-lg font-medium mb-4">Camera Access Required</p>
-            <p className="text-sm text-gray-400 mb-6">
-              Please enable camera permissions in your browser settings to use the AR necklace try-on.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-white text-black rounded-lg font-medium hover:bg-gray-100 transition"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
